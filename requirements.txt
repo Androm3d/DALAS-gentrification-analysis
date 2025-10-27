@@ -1,0 +1,13 @@
+# Core data manipulation
+pandas
+geopandas
+
+# Web Scraping & Browser Automation
+requests
+beautifulsoup4
+lxml
+selenium
+undetected-chromedriver
+selenium-stealth
+webdriver-manager
+playwright
