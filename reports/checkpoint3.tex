@@ -1,0 +1,220 @@
+%=====================================================
+%   DALAS Project - Checkpoint 3: Data Assessment & Processing
+%   FINAL VERSION with Title Page and Table Fix
+%=====================================================
+
+\documentclass[11pt,a4paper]{article}
+
+%-----------------------------------
+% PACKAGES
+%-----------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{amsmath, amssymb, amsthm, mathtools}
+\usepackage{physics}
+\usepackage{bm}
+\usepackage{siunitx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{fancyhdr}
+\usepackage{float}
+\usepackage{titlesec}
+\usepackage[most]{tcolorbox}
+\usepackage{minted}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{colortbl}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{inconsolata}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{url}
+
+%-----------------------------------
+% COLORS
+%-----------------------------------
+\definecolor{deepblue}{HTML}{1E3A8A}
+\definecolor{deepgreen}{HTML}{065F46}
+\definecolor{deepred}{HTML}{9B1C1C}
+\definecolor{codegray}{gray}{0.95}
+\definecolor{tablehead}{gray}{0.90}
+
+%-----------------------------------
+% PAGE STYLE
+%-----------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\textbf{DALAS Project - Checkpoint 3}}
+\rhead{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\setlength{\headheight}{14pt}
+
+%-----------------------------------
+% SECTION STYLING
+%-----------------------------------
+\titleformat{\section}{\normalfont\Large\bfseries\color{deepblue}}{}{0em}{}
+\titleformat{\subsection}{\normalfont\large\bfseries\color{deepgreen}}{}{0em}{}
+
+%-----------------------------------
+% BOXES & COMMANDS
+%-----------------------------------
+\newtcolorbox{infobox}[1][]{colback=deepblue!5,colframe=deepblue!80!black, title=\textbf{Problem Recap},breakable,#1}
+\newcommand{\code}[1]{\texttt{#1}}
+
+%-----------------------------------
+% REMOVE DEFAULT TITLE
+%-----------------------------------
+\title{}
+\author{}
+\date{}
+
+%-----------------------------------
+% DOCUMENT
+%-----------------------------------
+\begin{document}
+
+%===================================
+% NEW FULL-PAGE TITLE
+%===================================
+\begin{titlepage}
+    \centering
+    \vfill
+
+    % University Logo
+    \includegraphics[width=0.4\textwidth]{/Users/pibe/sorbonne/sorbonne-universite-sciences-logo-png_seeklogo-478816.jpg}
+    \vspace{2cm}
+
+    % Project Title
+    {\Huge \bfseries Predicting the Next Wave of Gentrification\par}
+    \vspace{1.5cm}
+
+    % Subtitle
+    {\Large \bfseries A Data-Driven Analysis and Forecasting Model\par}
+
+    \vfill
+
+    % Authors
+    {\Large Gabriele Argentieri \& Marcel Alabart\par}
+    \vspace{0.5cm}
+    {\large \textit{DALAS - Sorbonne Université}\par}
+    
+    \vfill
+    
+    % Date
+    {\large November 3, 2025\par}
+    \vspace{1cm}
+
+\end{titlepage}
+
+%===================================
+% REPORT CONTENT
+%===================================
+\pagestyle{fancy} % Reactivate fancy style for subsequent pages
+\tableofcontents
+\newpage
+
+\section{Introduction and Problem Recap}
+
+This report details the data assessment and processing phase of our project, which aims to identify the drivers of gentrification and predict future hotspots in Paris, Barcelona, and Milan. This phase is critical as it involves transforming a wide array of raw, heterogeneous data into a unified, analysis-ready dataset.
+
+\begin{infobox}
+    Our objective is to train a regression model to predict a "Gentrification Gap" index, defined for each neighborhood $i$ as:
+    \[ G_i = \text{PercentileRank}(P_i) - \text{PercentileRank}(I_i) \]
+    where $P_i$ is the median property price and $I_i$ is the median household income. The feature importances derived from this model will allow us to understand the key drivers of this phenomenon.
+\end{infobox}
+
+\section{Data Processing and Integration Workflow}
+
+To construct our master dataset, we executed a multi-stage workflow designed to handle the diverse formats and structures of our raw data sources. The entire process was orchestrated using Python, primarily leveraging \code{pandas}, \code{geopandas}, and a sophisticated, custom-built web scraping framework.
+
+\subsection{Step 1: Geospatial Foundation as a Spatial Index}
+The first and most critical step was to establish a consistent geographical baseline for each city, which serves as the spatial index for all subsequent data integration.
+\begin{itemize}
+    \item We obtained official GeoJSON boundary files for the administrative neighborhoods of Paris (\textit{arrondissements}), Barcelona (\textit{barris}), and Milan (\textit{Nuclei di Identità Locale}).
+    \item These files were loaded into a \code{geopandas} GeoDataFrame, creating a "base layer" containing a unique ID, name, and polygon \code{geometry} for each neighborhood.
+\end{itemize}
+
+\subsection{Step 2: Advanced Web Scraping for Real Estate Data}
+Acquiring real estate data from commercial platforms like \code{Idealista} and \code{SeLoger} was the most significant technical challenge due to sophisticated anti-bot measures. 
+\begin{itemize}
+    \item \textbf{Methodology:} We developed a resilient scraping pipeline using \textbf{Selenium} in conjunction with \textbf{\code{undetected-chromedriver}}. This combination launches a modified version of the Chromium browser that is significantly harder for bot detection systems to identify as automated.
+    
+    \item \textbf{Multi-Layered Evasion Strategy:} To ensure stable, long-term scraping sessions without being blocked, we implemented a comprehensive strategy to mimic human behavior, including browser fingerprint masking with \code{selenium-stealth}, user-agent rotation, simulated human-like scrolling, and session management with randomized delays between batch requests.
+    
+    \item \textbf{Two-Phase Data Extraction:} Our process was divided into two distinct, resumable stages: (1) an initial scraper collected and saved unique property URLs, and (2) a second process read from this file, visited each URL in batches, and scraped the detailed data incrementally to ensure data integrity.
+\end{itemize}
+
+\subsection{Step 3: Source-Specific Processing and Spatial Joins}
+Each raw dataset was independently cleaned and then mapped to our geospatial base layer.
+\begin{itemize}
+    \item \textbf{Real Estate and Tourism Data:} Both scraped property listings and Inside Airbnb data provided latitude and longitude coordinates. We converted these into \code{geopandas} GeoDataFrames of \code{Point} geometries. The core integration step was a \textbf{spatial join} (\code{gpd.sjoin}) using the "within" predicate to efficiently assign each property or listing to its correct neighborhood polygon.
+    
+    \item \textbf{Socio-Economic Data:} Official data from INSEE, INE, and ISTAT was joined to our base layer using standard \code{pandas.merge} on standardized neighborhood names or official codes.
+\end{itemize}
+
+\subsection{Step 4: Final Merging and Feature Engineering}
+With all data sources joined to the base layer, we performed a final aggregation by neighborhood. This step produced our final, clean master table, upon which we engineered our target variable, the \verb|gentrification_gap_index|.
+
+\section{The Master Data Schema}
+
+The rigorous processing workflow resulted in the following unified data structure. Each row represents a single neighborhood, allowing for direct comparison across all three cities.
+
+% Using 'p' columns to allow automatic text wrapping and prevent overflow
+\begin{longtable}{>{\bfseries}p{0.2\textwidth} >{\raggedright\arraybackslash}p{0.3\textwidth} p{0.5\textwidth}}
+\caption{Final Master Schema for the Analysis-Ready Dataset} \label{tab:schema} \\
+\toprule
+\rowcolor{tablehead}
+\textbf{Category} & \textbf{Final Column Name} & \textbf{Description \& Justification} \\
+\midrule
+\endfirsthead
+\multicolumn{3}{c}%
+{{\bfseries \tablename\ \thetable{} -- continued from previous page}} \\
+\toprule
+\rowcolor{tablehead}
+\textbf{Category} & \textbf{Final Column Name} & \textbf{Description \& Justification} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Identifiers & \verb|city| & The city name (e.g., "Paris"). Essential for comparative analysis. \\
+& \verb|neighborhood_id| & A unique, standardized ID for each neighborhood (e.g., \verb|PAR_75003|). \\
+& \verb|neighborhood_name| & The official name of the neighborhood. \\
+& \verb|geometry| & The geographic polygon shape of the neighborhood. Used for all spatial joins. \\
+\midrule
+Target Variable & \verb|median_property_price_eur| & Median price of properties. Used to compute the target variable. \\
+& \verb|median_household_income_eur| & Median annual household income. Used to compute the target variable. \\
+& \verb|gentrification_gap_index| & \textbf{TARGET VARIABLE}. Calculated as \code{Rank(Price) - Rank(Income)}. \\
+\midrule
+Socio-Economic Features & \verb|population_density| & Inhabitants per km². Measures urban density. \\
+& \verb|delta_population_density| & Percentage change in population density over the analysis period. \\
+& \verb|pct_young_adults| & Percentage of population aged 25-39, a key gentrifier demographic. \\
+& \verb|pct_higher_education| & Percentage of residents with a university degree. \\
+& \verb|delta_higher_education| & Change in the percentage of residents with a university degree. \\
+\midrule
+Housing \& Tourism Features & \verb|avg_price_per_m2| & Average price per square meter from real estate listings. \\
+& \verb|delta_price_per_m2| & Percentage change in price per m² over the analysis period. \\
+& \verb|airbnb_density| & Number of active Airbnb listings per 1,000 residents. Measures tourism pressure. \\
+& \verb|pct_entire_home_airbnb| & Percentage of Airbnbs listed as "Entire home/apt," indicating commercial use. \\
+\midrule
+Urban Environment \& Policy Features & \verb|commercial_density_gentrify| & Number of "gentrifying" businesses (cafes, art galleries) per km². \\
+& \verb|distance_to_new_transport| & Distance (km) from the neighborhood's center to the nearest major new transport hub. \\
+& \verb|is_in_renewal_zone| & A binary flag (1/0) indicating if the neighborhood is in a designated urban renewal zone. \\
+\bottomrule
+\end{longtable}
+
+\section{Current Data Assessment}
+\begin{itemize}
+    \item \textbf{Missing Values:} Missing data was a significant issue, particularly in the scraped real estate datasets where price or size were sometimes omitted. We handled this by dropping rows where the price (a critical field) was missing. For less critical numerical features, we used median imputation. For categorical features, missing values were filled with a distinct "Unknown" category.
+
+    \item \textbf{Outliers:} We identified outliers primarily in property prices. These high-value properties were considered legitimate data points representing the high-end market rather than errors. To mitigate their influence on our analysis, we prioritized the use of robust statistical measures like the median over the mean.
+
+    \item \textbf{Cleaning and Pre-processing:} This was the most time-intensive task. It involved extensive string manipulation to parse numerical values from text (e.g., "1.200.000 €"), standardizing addresses across different formats, and creating consistent geographical identifiers to enable the merging of disparate datasets.
+    
+    \item \textbf{Bias:} We have identified two primary sources of potential bias. First, \textbf{source bias} exists as our real estate data comes from major online portals, which may not capture private sales and could over-represent certain types of properties. Second, \textbf{measurement bias} is inherent in our target variable; while our "Gentrification Gap" is a robust and data-driven proxy, it remains a simplification of a deeply complex social phenomenon. We will acknowledge these limitations in our final report.
+\end{itemize}
+
+\end{document}
