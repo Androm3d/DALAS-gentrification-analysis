@@ -205,3 +205,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+# Ignore all data files
+data/
+
+# But keep small metadata or config files if needed
+!data/README.md
+!data/*.gitkeep

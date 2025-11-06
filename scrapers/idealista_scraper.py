@@ -122,10 +122,30 @@ def extract_listing_details(driver):
     """
     Parses the detail page using precise selectors.
     """
-    data = {'price': None, 'location_street': None, 'location_neighborhood': None, 'location_district': None, 'surface_m2': None, 'rooms': None, 'bathrooms': None, 'property_status': None, 'year_built': None, 'floor_level': None, 'has_elevator': None, 'energy_cert_consumption': None, 'advertiser_type': None, 'advertiser_name': None}
+    data = {
+        'price': None,
+        'location_street': None,
+        'location_neighborhood': None,
+        'location_district': None,
+        'surface_m2': None,
+        'rooms': None,
+        'bathrooms': None,
+        'property_status': None,
+        'year_built': None,
+        'floor_level': None,
+        'has_elevator': None,
+        'energy_cert_consumption': None,
+        'advertiser_type': None,
+        'advertiser_name': None
+    }
     
-    try: data['price'] = driver.find_element(By.CSS_SELECTOR, "span.info-data-price span.txt-bold").text
-    except NoSuchElementException: print("  ! Price not found.")
+    # Extract price
+    try:
+        data['price'] = driver.find_element(By.CSS_SELECTOR, "span.info-data-price span.txt-bold").text
+    except NoSuchElementException:
+        print("  ! Price not found.")
+    
+    # Extract location details
     try:
         loc_elements = driver.find_elements(By.CSS_SELECTOR, "#headerMap ul li")
         if len(loc_elements) >= 3:
@@ -134,27 +154,51 @@ def extract_listing_details(driver):
                 'location_neighborhood': loc_elements[1].text.replace('Barrio ', ''),
                 'location_district': loc_elements[2].text.replace('Distrito ', '')
             })
-    except NoSuchElementException: print("  ! Granular location not found.")
+    except NoSuchElementException:
+        print("  ! Granular location not found.")
+    
+    # Extract property features - FIXED VERSION
     try:
         for element in driver.find_elements(By.CSS_SELECTOR, "div.details-property_features ul li"):
             text = element.text.lower()
-            num = (re.search(r'(\d+)', text) or [None])[0]
-            if 'm²' in text and data['surface_m2'] is None and num: data['surface_m2'] = int(num)
-            elif 'habitación' in text and data['rooms'] is None and num: data['rooms'] = int(num)
-            elif 'baño' in text and data['bathrooms'] is None and num: data['bathrooms'] = int(num)
-            elif any(s in text for s in ['segunda mano', 'buen estado', 'reformar']) and data['property_status'] is None: data['property_status'] = element.text
-            elif 'construido en' in text and data['year_built'] is None and num: data['year_built'] = int(num)
-            elif 'planta' in text and data['floor_level'] is None: data['floor_level'] = element.text
-            elif 'ascensor' in text and data['has_elevator'] is None: data['has_elevator'] = 'con ascensor' in text
-    except NoSuchElementException: print("  ! 'Características básicas' section not found.")
+            
+            # Fix: Properly extract number from regex match
+            match = re.search(r'(\d+)', text)
+            num = match.group(1) if match else None
+            
+            if 'm²' in text and data['surface_m2'] is None and num:
+                data['surface_m2'] = int(num)
+            elif 'habitación' in text and data['rooms'] is None and num:
+                data['rooms'] = int(num)
+            elif 'baño' in text and data['bathrooms'] is None and num:
+                data['bathrooms'] = int(num)
+            elif any(s in text for s in ['segunda mano', 'buen estado', 'reformar']) and data['property_status'] is None:
+                data['property_status'] = element.text
+            elif 'construido en' in text and data['year_built'] is None and num:
+                data['year_built'] = int(num)
+            elif 'planta' in text and data['floor_level'] is None:
+                data['floor_level'] = element.text
+            elif 'ascensor' in text and data['has_elevator'] is None:
+                data['has_elevator'] = 'con ascensor' in text
+    except NoSuchElementException:
+        print("  ! 'Características básicas' section not found.")
+    
+    # Extract energy certificate
     try:
         cert_class = driver.find_element(By.CSS_SELECTOR, "div.details-property_features span[class*='icon-energy-c-']").get_attribute('class')
-        if (match := re.search(r'icon-energy-c-([a-g])', cert_class)): data['energy_cert_consumption'] = match.group(1).upper()
-    except NoSuchElementException: pass
+        match = re.search(r'icon-energy-c-([a-g])', cert_class)
+        if match:
+            data['energy_cert_consumption'] = match.group(1).upper()
+    except NoSuchElementException:
+        pass
+    
+    # Extract advertiser info
     try:
         data['advertiser_type'] = driver.find_element(By.CSS_SELECTOR, "div.professional-name .name").text
         data['advertiser_name'] = driver.find_element(By.CSS_SELECTOR, "div.professional-name span").text
-    except NoSuchElementException: data['advertiser_type'] = 'Particular'
+    except NoSuchElementException:
+        data['advertiser_type'] = 'Particular'
+    
     return data
 
 def scrape_details_in_batches(listing_urls: list, batch_size_min: int, batch_size_max: int):

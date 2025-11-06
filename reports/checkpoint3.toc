@@ -1,0 +1,9 @@
+\babel@toc {english}{}\relax 
+\contentsline {section}{\numberline {1}Introduction and Problem Recap}{2}{section.1}%
+\contentsline {section}{\numberline {2}Data Processing and Integration Workflow}{2}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Step 1: Geospatial Foundation as a Spatial Index}{2}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Step 2: Advanced Web Scraping for Real Estate Data}{2}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Step 3: Source-Specific Processing and Spatial Joins}{3}{subsection.2.3}%
+\contentsline {subsection}{\numberline {2.4}Step 4: Final Merging and Feature Engineering}{3}{subsection.2.4}%
+\contentsline {section}{\numberline {3}The Master Data Schema}{3}{section.3}%
+\contentsline {section}{\numberline {4}Current Data Assessment}{4}{section.4}%
