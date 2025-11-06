@@ -1,6 +1,8 @@
 # Core data manipulation
 pandas
 geopandas
+shapely
+functools
 
 # Web Scraping & Browser Automation
 requests
