@@ -213,3 +213,6 @@ data/
 # But keep small metadata or config files if needed
 !data/README.md
 !data/*.gitkeep
+
+# Ignore Jupyter Notebook checkpoints
+*.ipynb_checkpoints/
