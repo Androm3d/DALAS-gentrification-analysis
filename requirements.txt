@@ -4,6 +4,7 @@ geopandas
 shapely
 functools
 plotly
+shap
 
 # Web Scraping & Browser Automation
 requests
