@@ -327,58 +327,61 @@ def extract_listing_details(driver):
 
 def scrape_details_in_batches(listing_urls: list, batch_size_min: int, batch_size_max: int):
     """
-    Scrapes property details in batches with improved error handling.
+    Scrapes property details with a PERSISTENT driver session.
     """
     urls_to_scrape = list(listing_urls)
     os.makedirs(config.BARCELONA_DATA_DIR, exist_ok=True)
     
-    # Load already scraped URLs
+    # 1. Filter already scraped URLs
     if os.path.exists(config.DETAILS_FILE) and os.path.getsize(config.DETAILS_FILE) > 0:
         try:
             completed_df = pd.read_csv(config.DETAILS_FILE)
             if 'url' in completed_df.columns:
                 completed_urls = set(completed_df['url'])
-                print(f"✓ Found {len(completed_urls)} already scraped URLs. They will be skipped.")
+                print(f"✓ Found {len(completed_urls)} already scraped URLs. Skipping.")
                 urls_to_scrape = [url for url in urls_to_scrape if url not in completed_urls]
-            else:
-                print(f"! Details file is malformed. Starting fresh.")
-                os.remove(config.DETAILS_FILE)
         except Exception:
-            print(f"! Details file is empty or malformed. Starting fresh.")
-    else:
-        print(f"Starting a new details scrape to {config.DETAILS_FILE}")
+            pass
 
     print(f"Total new listings to scrape: {len(urls_to_scrape)}")
     
-    # Check for Chrome
     chrome_path = get_chrome_path()
     if not chrome_path:
-        print("ERROR: Could not find Chrome or Chromium browser!")
         return
 
-    batch_num = 0
-    failed_urls = []  # Track failed URLs
+    # --- 2. INITIALIZE DRIVER ONCE (OUTSIDE THE LOOP) ---
+    # Pick ONE User Agent for the entire session
+    selected_ua = random.choice(USER_AGENTS)
+    print(f"✓ Session User Agent: {selected_ua}")
 
-    while urls_to_scrape:
-        batch_num += 1
-        current_batch_size = random.randint(batch_size_min, batch_size_max)
-        batch_urls, urls_to_scrape = urls_to_scrape[:current_batch_size], urls_to_scrape[current_batch_size:]
+    options = uc.ChromeOptions()
+    options.add_argument(f"user-agent={selected_ua}")
+    options.binary_location = chrome_path
+    
+    # Optional: Use a persistent profile to save cookies between runs
+    # options.add_argument(f"--user-data-dir={os.getcwd()}/chrome_profile") 
 
-        print(f"\n{'='*60}\nProcessing Batch {batch_num} ({len(batch_urls)} URLs)\n{'='*60}")
-        
-        options = uc.ChromeOptions()
-        options.add_argument(f"user-agent={random.choice(USER_AGENTS)}")
-        options.binary_location = chrome_path
-        
-        driver = uc.Chrome(options=options, use_subprocess=True)
-        stealth(driver, languages=["en-US", "en"], vendor="Google Inc.", platform="Win32")
-        
-        batch_data = []
-        try:
+    driver = uc.Chrome(options=options, use_subprocess=True)
+    stealth(driver, languages=["en-US", "en"], vendor="Google Inc.", platform="Win32")
+
+    try:
+        batch_num = 0
+        while urls_to_scrape:
+            batch_num += 1
+            current_batch_size = random.randint(batch_size_min, batch_size_max)
+            batch_urls = urls_to_scrape[:current_batch_size]
+            urls_to_scrape = urls_to_scrape[current_batch_size:]  # Remove processed URLs from main list
+
+            print(f"\n{'='*60}\nProcessing Batch {batch_num} ({len(batch_urls)} URLs)\n{'='*60}")
+            
+            batch_data = []
+            
             for idx, url in enumerate(batch_urls, 1):
                 print(f"\n[{idx}/{len(batch_urls)}] Scraping: {url}")
                 try:
                     driver.get(url)
+                    
+                    # Short delays between items in a batch
                     time.sleep(random.uniform(4, 7))
                     human_like_scroll(driver)
                     time.sleep(random.uniform(3, 5))
@@ -386,41 +389,42 @@ def scrape_details_in_batches(listing_urls: list, batch_size_min: int, batch_siz
                     scraped_data = extract_listing_details(driver)
                     scraped_data['url'] = url
                     
-                    # Only save if we got at least some data (price exists)
                     if scraped_data['price']:
                         batch_data.append(scraped_data)
-                        print(f"  ✓ Successfully extracted listing data")
+                        print(f"  ✓ Extracted")
                     else:
-                        print(f"  ⚠ Listing appears to be unavailable or deleted")
-                        failed_urls.append(url)
-                        # Still save the URL so we don't retry it
-                        batch_data.append(scraped_data)
+                        print(f"  ⚠ Unavailable")
+                        # You might want to remove this URL from future runs even if failed
+                        batch_data.append(scraped_data) 
                         
                 except Exception as e:
-                    print(f"  ✗ UNEXPECTED ERROR scraping listing {url}: {e}")
-                    os.makedirs(config.ERROR_DIR, exist_ok=True)
-                    driver.save_screenshot(config.ERROR_DIR / f'error_listing_{batch_num}_{idx}.png')
-                    failed_urls.append(url)
+                    print(f"  ✗ Error: {e}")
                     continue
-        finally:
-            driver.quit()
 
-        # Save batch data
-        if batch_data:
-            df = pd.DataFrame(batch_data)
-            header_exists = os.path.exists(config.DETAILS_FILE) and os.path.getsize(config.DETAILS_FILE) > 0
-            df.to_csv(config.DETAILS_FILE, mode='a', header=not header_exists, index=False)
-            print(f"✓ Saved {len(batch_data)} records to CSV")
+            # Save batch data
+            if batch_data:
+                df = pd.DataFrame(batch_data)
+                header_exists = os.path.exists(config.DETAILS_FILE) and os.path.getsize(config.DETAILS_FILE) > 0
+                df.to_csv(config.DETAILS_FILE, mode='a', header=not header_exists, index=False)
+                print(f"✓ Saved batch to CSV")
 
-        if urls_to_scrape:
-            print("\n--- Taking a long break between batches... ---")
-            random_delay(90, 150)
-    
-    # Summary
-    print(f"\n{'='*60}\n✓ All scraping complete.\n{'='*60}")
-    if failed_urls:
-        print(f"⚠ {len(failed_urls)} URLs failed or were unavailable")
-        print("Failed URLs saved in the CSV with null values")
+            if urls_to_scrape:
+                print("\n--- Taking a long break (Driver remains open)... ---")
+                # 3. WAIT WITH DRIVER OPEN
+                # This looks like a user reading a page or taking a break, 
+                # rather than a bot restarting.
+                
+                # Optional: Visit a "safe" page during the break to keep session alive 
+                # but idle, or just stay on the last listing.
+                random_delay(90, 150)
+
+    except Exception as e:
+        print(f"Critical Error: {e}")
+    finally:
+        # Only close when EVERYTHING is done or crashed
+        driver.quit()
+        print("\n✓ Scraping finished. Browser closed.")
+        
 
 # --- MAIN ORCHESTRATION BLOCK ---
 
