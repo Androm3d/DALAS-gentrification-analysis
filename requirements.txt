@@ -2,7 +2,6 @@
 pandas
 geopandas
 shapely
-functools
 plotly
 shap
 
@@ -14,4 +13,8 @@ selenium
 undetected-chromedriver
 selenium-stealth
 webdriver-manager
+
+# Special Case: Playwright
+# On osx-arm64, it is highly recommended to install via conda-forge 
+# or ensure pip has access to the latest wheels.
 playwright
