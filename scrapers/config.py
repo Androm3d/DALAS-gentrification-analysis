@@ -10,12 +10,15 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 RAW_DATA_DIR = DATA_DIR / "raw"
 BARCELONA_DATA_DIR = RAW_DATA_DIR / "barcelona"
+MILAN_DATA_DIR = RAW_DATA_DIR / "milan"
 
 
 # --- File Paths ---
 # We use .joinpath() to create the full file path
 URL_FILE = BARCELONA_DATA_DIR.joinpath('idealista_listings.csv')
 DETAILS_FILE = BARCELONA_DATA_DIR.joinpath('idealista_details.csv')
+MILAN_URL_FILE = MILAN_DATA_DIR.joinpath('idealista_listings.csv')
+MILAN_DETAILS_FILE = MILAN_DATA_DIR.joinpath('idealista_details.csv')
 
 # --- Error Screenshot Path ---
 # It's good practice to save temporary files like screenshots in a separate folder

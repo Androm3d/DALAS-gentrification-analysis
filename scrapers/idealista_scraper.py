@@ -13,8 +13,9 @@ import os
 import re
 import platform
 import os
+import math
 from pathlib import Path
-# Import the configuration variables from our new config file
+
 import config
 
 
@@ -83,11 +84,24 @@ def get_chrome_path():
 
 # --- SCRAPING LOGIC ---
 
-def scrape_idealista_undetected(start_url: str, max_pages: int = 10):
+def scrape_idealista_undetected(start_url: str, target_count: int = 0):
     """
-    Scrapes property listing URLs from Idealista and returns them as a list.
+    Scrapes property listing URLs.
+    Args:
+        start_url: The search page URL.
+        target_count: How many new listings we aim to find (controls max_pages).
     """
     print(f"Starting URL scrape for: {start_url}")
+    
+    # Calculate pages needed (approx 30 listings per page on Idealista)
+    # We add a 20% buffer because of potential duplicates or ads
+    if target_count > 0:
+        est_pages = math.ceil((target_count / 30) * 1.2)
+        # Idealista usually caps at ~60 pages for a single query
+        max_pages = min(est_pages, 60) 
+        print(f"Aiming for {target_count} listings. Will scrape approx {max_pages} pages.")
+    else:
+        max_pages = 5 # Default fallback
     
     options = uc.ChromeOptions()
     options.add_argument(f"user-agent={random.choice(USER_AGENTS)}")
@@ -102,7 +116,6 @@ def scrape_idealista_undetected(start_url: str, max_pages: int = 10):
             options.binary_location = chrome_path
             driver = uc.Chrome(options=options, use_subprocess=True)
         else:
-            print("! No Chrome/Chromium found. Trying default installation...")
             driver = uc.Chrome(options=options, use_subprocess=True)
     except Exception as e:
         print(f"Error initializing driver: {e}")
@@ -110,16 +123,18 @@ def scrape_idealista_undetected(start_url: str, max_pages: int = 10):
 
     stealth(driver, languages=["en-US", "en"], vendor="Google Inc.", platform="Win32")
     
-            
+    unique_urls = set()
+    
     try:
-        listing_urls = []
         current_url = start_url
         
         for page_num in range(1, max_pages + 1):
-            print(f"\n{'='*60}\nScraping search results page {page_num}...\n{'='*60}")
+            print(f"\n{'='*60}\nScraping search results page {page_num}/{max_pages}...\n{'='*60}")
             
             try:
                 driver.get(current_url)
+                
+                # Cookie Banner Handling (Page 1 only)
                 if page_num == 1:
                     try:
                         WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "didomi-notice-agree-button"))).click()
@@ -128,17 +143,35 @@ def scrape_idealista_undetected(start_url: str, max_pages: int = 10):
                     except TimeoutException:
                         print("! No cookie banner found or it timed out.")
                 
-                random_delay(5, 10)
+                random_delay(3, 5)
                 human_like_scroll(driver)
-                random_delay(2, 4)
                 
+                # Wait for items to load
                 WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'article.item')))
                 articles = driver.find_elements(By.CSS_SELECTOR, 'article.item a.item-link')
+                
+                # Extract URLs
                 urls_on_page = [a.get_attribute('href') for a in articles if a.get_attribute('href')]
+                new_urls_count = 0
                 
-                listing_urls.extend(urls_on_page)
-                print(f"✓ Found {len(urls_on_page)} listings on this page.")
+                # --- INCREMENTAL SAVE ---
+                # We save immediately so we don't lose progress during the next long sleep
+                if urls_on_page:
+                    # Append to file immediately
+                    header_needed = not os.path.exists(config.MILAN_URL_FILE)
+                    df_page = pd.DataFrame({'listing_url': urls_on_page})
+                    df_page.to_csv(config.MILAN_URL_FILE, mode='a', header=header_needed, index=False)
+                    
+                    unique_urls.update(urls_on_page)
+                    new_urls_count = len(urls_on_page)
+                    print(f"✓ Found and SAVED {new_urls_count} listings on this page.")
                 
+                # Check if we should stop
+                if len(unique_urls) >= target_count and target_count > 0:
+                    print(f"✓ Hit target of {target_count} new listings. Stopping.")
+                    break
+
+                # Pagination
                 try:
                     next_button = driver.find_element(By.CSS_SELECTOR, 'li.next a')
                     current_url = next_button.get_attribute('href')
@@ -148,18 +181,15 @@ def scrape_idealista_undetected(start_url: str, max_pages: int = 10):
                     print("✓ No 'Next' button found. Reached the last page.")
                     break
                 
-                random_delay(15, 25)
+                random_delay(7, 15)
                 
             except Exception as e:
                 print(f"✗ Error on page {page_num}: {e}")
-                # Use the new config path for error screenshots
                 os.makedirs(config.ERROR_DIR, exist_ok=True)
                 driver.save_screenshot(config.ERROR_DIR / f'error_page_{page_num}.png')
                 break
         
-        unique_urls = list(set(listing_urls))
-        print(f"\n{'='*60}\n✓ URL scraping function complete!\n✓ Collected {len(unique_urls)} unique URLs in memory.\n{'='*60}")
-        return unique_urls
+        return list(unique_urls)
         
     finally:
         driver.quit()
@@ -167,7 +197,7 @@ def scrape_idealista_undetected(start_url: str, max_pages: int = 10):
 
 def extract_listing_details(driver):
     """
-    Parses the detail page using multiple selector strategies for robustness.
+    Parses the detail page. Updated to support both Spanish (ES) and Italian (IT) keywords.
     """
     data = {
         'price': None,
@@ -188,9 +218,8 @@ def extract_listing_details(driver):
     
     # Check if listing still exists
     try:
-        # Look for "not available" or error messages
         page_source = driver.page_source.lower()
-        if 'no disponible' in page_source or 'not available' in page_source or 'error' in driver.title.lower():
+        if any(x in page_source for x in ['no disponible', 'not available', 'non disponibile']) or 'error' in driver.title.lower():
             print("  ! Listing no longer available or page error")
             return data
     except:
@@ -201,90 +230,87 @@ def extract_listing_details(driver):
         data['price'] = driver.find_element(By.CSS_SELECTOR, "span.info-data-price span.txt-bold").text
     except NoSuchElementException:
         try:
-            # Alternative price selector
             data['price'] = driver.find_element(By.CSS_SELECTOR, ".info-data-price").text.strip()
         except:
             print("  ! Price not found.")
     
-    # Extract location details
+    # Extract location details (Handles ES 'Barrio/Distrito' and IT 'Zona/Quartiere')
     try:
         loc_elements = driver.find_elements(By.CSS_SELECTOR, "#headerMap ul li")
         if len(loc_elements) >= 3:
-            data.update({
-                'location_street': loc_elements[0].text,
-                'location_neighborhood': loc_elements[1].text.replace('Barrio ', '').replace('Subdistrict ', ''),
-                'location_district': loc_elements[2].text.replace('Distrito ', '').replace('District ', '')
-            })
+            data['location_street'] = loc_elements[0].text
+            data['location_neighborhood'] = loc_elements[1].text
+            data['location_district'] = loc_elements[2].text
         elif len(loc_elements) == 2:
-            data['location_neighborhood'] = loc_elements[0].text.replace('Barrio ', '').replace('Subdistrict ', '')
-            data['location_district'] = loc_elements[1].text.replace('Distrito ', '').replace('District ', '')
+            data['location_neighborhood'] = loc_elements[0].text
+            data['location_district'] = loc_elements[1].text
+            
+        # Cleanup common prefixes (ES & IT)
+        for key in ['location_neighborhood', 'location_district']:
+            if data[key]:
+                data[key] = (data[key]
+                             .replace('Barrio ', '').replace('Distrito ', '')  # ES
+                             .replace('Quartiere ', '').replace('Zona ', '')   # IT
+                             .replace('District ', '').replace('Subdistrict ', '') # EN
+                             .strip())
     except Exception as e:
         print(f"  ! Location extraction error: {e}")
     
-    # Extract property features - Try multiple selectors
+    # Extract property features
     try:
-        # First, try the main features section
         features_elements = driver.find_elements(By.CSS_SELECTOR, "div.details-property_features ul li")
-        
-        # If not found, try alternative selector
         if not features_elements:
             features_elements = driver.find_elements(By.CSS_SELECTOR, ".details-property-feature-one")
-        
-        # If still not found, try getting all text from details section
-        if not features_elements:
-            features_elements = driver.find_elements(By.CSS_SELECTOR, ".details-property_features span")
         
         print(f"  → Found {len(features_elements)} feature elements")
         
         for element in features_elements:
             try:
                 text = element.text.lower().strip()
-                if not text:
-                    continue
+                if not text: continue
                     
-                print(f"  → Processing feature: {text}")
-                
-                # Extract number from text
                 match = re.search(r'(\d+)', text)
                 num = match.group(1) if match else None
                 
                 # Surface area
                 if ('m²' in text or 'm2' in text or 'built' in text) and data['surface_m2'] is None and num:
                     data['surface_m2'] = int(num)
-                    print(f"    ✓ Found surface: {num} m²")
+                    print(f"    ✓ Found surface: {num}")
                 
-                # Rooms/Bedrooms
-                elif ('habitación' in text or 'bedroom' in text or 'room' in text) and data['rooms'] is None and num:
+                # Rooms (ES: habitacion, IT: locali/camere, EN: bedroom/room)
+                elif any(x in text for x in ['habitación', 'bedroom', 'room', 'locali', 'camere', 'camera']) and data['rooms'] is None and num:
                     data['rooms'] = int(num)
                     print(f"    ✓ Found rooms: {num}")
                 
-                # Bathrooms
-                elif ('baño' in text or 'bathroom' in text) and data['bathrooms'] is None and num:
+                # Bathrooms (ES: baño, IT: bagno/bagni, EN: bathroom)
+                elif any(x in text for x in ['baño', 'bathroom', 'bagno', 'bagni']) and data['bathrooms'] is None and num:
                     data['bathrooms'] = int(num)
                     print(f"    ✓ Found bathrooms: {num}")
                 
-                # Property status
-                elif any(s in text for s in ['segunda mano', 'second hand', 'buen estado', 'good condition', 'reformar', 'to reform', 'new development', 'obra nueva']) and data['property_status'] is None:
+                # Status (ES/IT mix)
+                elif any(s in text for s in [
+                    'segunda mano', 'second hand', 'buen estado', 'good condition', 'reformar', 'to reform', 'new development', 'obra nueva',
+                    'buono stato', 'da ristrutturare', 'nuova costruzione' # IT keywords
+                ]) and data['property_status'] is None:
                     data['property_status'] = element.text
                     print(f"    ✓ Found status: {element.text}")
                 
-                # Year built
-                elif ('construido' in text or 'built in' in text) and data['year_built'] is None and num:
+                # Year built (ES: construido, IT: costruito)
+                elif ('construido' in text or 'built' in text or 'costruito' in text) and data['year_built'] is None and num:
                     data['year_built'] = int(num)
                     print(f"    ✓ Found year: {num}")
                 
-                # Floor level
-                elif ('planta' in text or 'floor' in text) and data['floor_level'] is None and 'exterior' not in text:
+                # Floor level (ES: planta, IT: piano)
+                elif ('planta' in text or 'floor' in text or 'piano' in text) and data['floor_level'] is None and 'exterior' not in text:
                     data['floor_level'] = element.text
                     print(f"    ✓ Found floor: {element.text}")
                 
-                # Elevator
-                elif 'ascensor' in text or 'elevator' in text or 'lift' in text:
-                    data['has_elevator'] = 'con' in text or 'with' in text or text.startswith('elevator')
+                # Elevator (ES: ascensor, IT: ascensore)
+                elif any(x in text for x in ['ascensor', 'elevator', 'lift', 'ascensore']):
+                    data['has_elevator'] = 'con' in text or 'with' in text or text.startswith('elevator') or text.startswith('ascensore')
                     print(f"    ✓ Found elevator: {data['has_elevator']}")
                     
-            except Exception as e:
-                print(f"  ! Error processing feature element: {e}")
+            except Exception:
                 continue
                 
     except Exception as e:
@@ -297,30 +323,15 @@ def extract_listing_details(driver):
         match = re.search(r'icon-energy-c-([a-g])', cert_class)
         if match:
             data['energy_cert_consumption'] = match.group(1).upper()
-            print(f"  ✓ Found energy cert: {data['energy_cert_consumption']}")
     except NoSuchElementException:
-        # Try alternative selector
-        try:
-            cert_text = driver.find_element(By.CSS_SELECTOR, ".energy-certificate").text
-            match = re.search(r'\b([A-G])\b', cert_text)
-            if match:
-                data['energy_cert_consumption'] = match.group(1)
-        except:
-            pass
+        pass
     
-    # Extract advertiser info
+    # Extract advertiser
     try:
         data['advertiser_type'] = driver.find_element(By.CSS_SELECTOR, "div.professional-name .name").text
         data['advertiser_name'] = driver.find_element(By.CSS_SELECTOR, "div.professional-name span").text
-        print(f"  ✓ Found advertiser: {data['advertiser_type']} - {data['advertiser_name']}")
-    except NoSuchElementException:
-        try:
-            # Alternative selector for advertiser
-            advertiser_elem = driver.find_element(By.CSS_SELECTOR, ".advertiser-data")
-            data['advertiser_type'] = advertiser_elem.text
-        except:
-            data['advertiser_type'] = 'Particular'
-            print(f"  ✓ Defaulting to Particular")
+    except:
+        data['advertiser_type'] = 'Particular'
     
     return data
 
@@ -333,9 +344,9 @@ def scrape_details_in_batches(listing_urls: list, batch_size_min: int, batch_siz
     os.makedirs(config.BARCELONA_DATA_DIR, exist_ok=True)
     
     # 1. Filter already scraped URLs
-    if os.path.exists(config.DETAILS_FILE) and os.path.getsize(config.DETAILS_FILE) > 0:
+    if os.path.exists(config.MILAN_DETAILS_FILE) and os.path.getsize(config.MILAN_DETAILS_FILE) > 0:
         try:
-            completed_df = pd.read_csv(config.DETAILS_FILE)
+            completed_df = pd.read_csv(config.MILAN_DETAILS_FILE)
             if 'url' in completed_df.columns:
                 completed_urls = set(completed_df['url'])
                 print(f"✓ Found {len(completed_urls)} already scraped URLs. Skipping.")
@@ -382,9 +393,9 @@ def scrape_details_in_batches(listing_urls: list, batch_size_min: int, batch_siz
                     driver.get(url)
                     
                     # Short delays between items in a batch
-                    time.sleep(random.uniform(4, 7))
+                    time.sleep(random.uniform(2, 4))
                     human_like_scroll(driver)
-                    time.sleep(random.uniform(3, 5))
+                    time.sleep(random.uniform(1, 3))
                     
                     scraped_data = extract_listing_details(driver)
                     scraped_data['url'] = url
@@ -404,8 +415,8 @@ def scrape_details_in_batches(listing_urls: list, batch_size_min: int, batch_siz
             # Save batch data
             if batch_data:
                 df = pd.DataFrame(batch_data)
-                header_exists = os.path.exists(config.DETAILS_FILE) and os.path.getsize(config.DETAILS_FILE) > 0
-                df.to_csv(config.DETAILS_FILE, mode='a', header=not header_exists, index=False)
+                header_exists = os.path.exists(config.MILAN_DETAILS_FILE) and os.path.getsize(config.MILAN_DETAILS_FILE) > 0
+                df.to_csv(config.MILAN_DETAILS_FILE, mode='a', header=not header_exists, index=False)
                 print(f"✓ Saved batch to CSV")
 
             if urls_to_scrape:
@@ -416,7 +427,7 @@ def scrape_details_in_batches(listing_urls: list, batch_size_min: int, batch_siz
                 
                 # Optional: Visit a "safe" page during the break to keep session alive 
                 # but idle, or just stay on the last listing.
-                random_delay(90, 150)
+                random_delay(30, 90)
 
     except Exception as e:
         print(f"Critical Error: {e}")
@@ -427,64 +438,52 @@ def scrape_details_in_batches(listing_urls: list, batch_size_min: int, batch_siz
         
 
 # --- MAIN ORCHESTRATION BLOCK ---
-
 if __name__ == "__main__":
-    MIN_LISTINGS = 200
-    os.makedirs(config.BARCELONA_DATA_DIR, exist_ok=True)
-    existing_urls = set()
+    # --- CONFIG FOR MILAN ---
+    MIN_LISTINGS = 1000
+    # ------------------------
+    
+    current_urls = set()
     run_url_scraper = True
 
-    # Check if we already have enough URLs
-    if os.path.exists(config.URL_FILE) and os.path.getsize(config.URL_FILE) > 0:
+    # 1. Check existing URLs
+    if os.path.exists(config.MILAN_URL_FILE) and os.path.getsize(config.MILAN_URL_FILE) > 0:
         try:
-            existing_df = pd.read_csv(config.URL_FILE)
-            existing_urls = set(existing_df['listing_url'])
-            if len(existing_urls) >= MIN_LISTINGS:
-                print(f"✓ Found {len(existing_urls)} URLs, which meets the minimum of {MIN_LISTINGS}.")
+            existing_df = pd.read_csv(config.MILAN_URL_FILE)
+            current_urls = set(existing_df['listing_url'])
+            if len(current_urls) >= MIN_LISTINGS:
+                print(f"✓ Found {len(current_urls)} URLs. Skipping URL scraping.")
                 run_url_scraper = False
             else:
-                print(f"! Only {len(existing_urls)}/{MIN_LISTINGS} URLs found. Will scrape for more.")
-        except Exception:
-            print(f"! URL file is empty or corrupted. Will scrape for URLs.")
+                print(f"! Found {len(current_urls)} URLs. Need more.")
+        except Exception as e:
+            print(f"Error reading existing URLs: {e}")
+            pass
     else:
-        print(f"URL file not found or is empty. Will scrape for URLs.")
+        print("! No existing URL file found. Will run URL scraper.")
 
-    # Run URL scraper if needed
+    # 2. Run URL Scraper
     if run_url_scraper:
-        print("\n--- Starting URL Scraping ---")
-        base_url = "https://www.idealista.com/en/venta-viviendas/barcelona/ciutat-vella/"
-        url_price_asc = base_url + "?ordenado-por=fecha-publicacion-desc" 
-        newly_scraped_urls = scrape_idealista_undetected(url_price_asc, max_pages=7)
-        all_urls = existing_urls.union(set(newly_scraped_urls))
+        needed = MIN_LISTINGS - len(current_urls)
+        target = needed if needed > 0 else MIN_LISTINGS
         
-        if all_urls:
-            print(f"\nSaving {len(all_urls)} total unique URLs to {config.URL_FILE}...")
-            df = pd.DataFrame({'listing_url': list(all_urls)})
-            df.to_csv(config.URL_FILE, index=False)
-            print("✓ Save complete.")
-        else:
-            print("! No new URLs were scraped. File not updated.")
+        print(f"\n--- Starting URL Scraping for MILAN ({target} listings) ---")
+        
+        # URL for Milan, sorted by newest
+        base_url = "https://www.idealista.it/en/vendita-case/milano-milano/"
+        url_newest = base_url + "?ordine=pubblicazione-desc"
+        
+        scrape_idealista_undetected(url_newest, target_count=target)
+        
+        if os.path.exists(config.MILAN_URL_FILE):
+             current_urls = set(pd.read_csv(config.MILAN_URL_FILE)['listing_url'])
 
-    # FIXED: Always load URLs for detail scraping, regardless of whether we just scraped them
+    # 3. Detail Scraping
     print("\n--- Starting Detail Scraping ---")
-    try:
-        print(f"DEBUG: About to read from: {config.URL_FILE}")
-        listings_df = pd.read_csv(config.URL_FILE).drop_duplicates()
-        print(f"DEBUG: Successfully read {len(listings_df)} rows")
-        listing_urls = listings_df['listing_url'].tolist()
-        print(f"DEBUG: Converted to {len(listing_urls)} URLs")
-        
-        if listing_urls:
-            print(f"✓ Loaded {len(listing_urls)} URLs for detail scraping.")
-            scrape_details_in_batches(listing_urls, batch_size_min=5, batch_size_max=9)
-        else:
-            print("! No URLs found in the file to scrape for details.")
-            
-    except FileNotFoundError as e:
-        print(f"ERROR: FileNotFoundError - {e}")
-        import traceback
-        traceback.print_exc()
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        import traceback
-        traceback.print_exc()
+    listing_urls = list(current_urls)
+    
+    if listing_urls:
+        print(f"✓ Loaded {len(listing_urls)} URLs for detail scraping.")
+        scrape_details_in_batches(listing_urls, batch_size_min=5, batch_size_max=9)
+    else:
+        print("! No URLs found to scrape.")
