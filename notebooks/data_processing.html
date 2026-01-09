@@ -7692,24 +7692,44 @@ We compare a neighborhood to its peers in the same city at the same time.</p>
 <div class="jp-InputPrompt jp-InputArea-prompt">In [4]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># --- Main Processing ---</span>
+<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># --- Main Processing (Barcelona &amp; Paris Only) ---</span>
+
+<span class="c1"># 0. Configuration</span>
+<span class="c1"># Ensure Rent is in the feature list so it gets Z-scored</span>
+<span class="n">FEATURE_COLS</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s1">'population_density'</span><span class="p">,</span>
+    <span class="s1">'pct_higher_education'</span><span class="p">,</span>
+    <span class="s1">'pct_young_adults'</span><span class="p">,</span>
+    <span class="s1">'median_household_income'</span><span class="p">,</span>
+    <span class="s1">'median_price_per_m2'</span><span class="p">,</span> 
+    <span class="s1">'median_rent_per_m2'</span><span class="p">,</span>
+    <span class="s1">'is_rent_imputed'</span><span class="p">,</span>
+    <span class="s1">'is_price_imputed'</span>        
+<span class="p">]</span>
 
 <span class="c1"># 1. Load Data</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">"--- Loading Data ---"</span><span class="p">)</span>
 <span class="n">df_bcn</span> <span class="o">=</span> <span class="n">load_and_prep</span><span class="p">(</span><span class="n">BARCELONA_PATH</span><span class="p">,</span> <span class="s2">"Barcelona"</span><span class="p">)</span>
 <span class="n">df_par</span> <span class="o">=</span> <span class="n">load_and_prep</span><span class="p">(</span><span class="n">PARIS_PATH</span><span class="p">,</span> <span class="s2">"Paris"</span><span class="p">)</span>
 
-<span class="c1"># Only combine Barcelona and Paris for Gentrification Gap calculation, as Milan data is already processed</span>
+<span class="c1"># Only combine Barcelona and Paris for Gentrification Gap calculation</span>
+<span class="c1"># (Milan is already processed and will be merged in the NEXT step/notebook)</span>
 <span class="n">master_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">df_bcn</span><span class="p">,</span> <span class="n">df_par</span><span class="p">],</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-<span class="c1"># 2. Calculate Gentrification Gap (The "Milan" Logic)</span>
+<span class="c1"># 2. Calculate Gentrification Gap (The "Sales-Only" Logic)</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">--- Calculating Gentrification Gap (Gi) ---"</span><span class="p">)</span>
 
 <span class="c1"># A. Compute Ranks (Pi and Ii)</span>
+<span class="c1"># This function calculates 'sales_rank' and 'rent_rank'</span>
 <span class="n">master_df</span> <span class="o">=</span> <span class="n">calculate_percentile_ranks</span><span class="p">(</span><span class="n">master_df</span><span class="p">)</span>
 
+<span class="c1"># --- THE FIX: Force Price Rank to be SALES ONLY ---</span>
+<span class="c1"># We overwrite the 'price_rank' (which might be an average) with strictly 'sales_rank'.</span>
+<span class="c1"># This ensures the Target (Gi) is purely about Sales Affordability.</span>
+<span class="n">master_df</span><span class="p">[</span><span class="s1">'price_rank'</span><span class="p">]</span> <span class="o">=</span> <span class="n">master_df</span><span class="p">[</span><span class="s1">'sales_rank'</span><span class="p">]</span> 
+<span class="c1"># --------------------------------------------------</span>
+
 <span class="c1"># B. Compute Gap (Gi = Pi - Ii)</span>
-<span class="c1"># Positive Gap = Prices are higher ranked than Incomes (Unaffordability/Gentrification Pressure)</span>
 <span class="n">master_df</span><span class="p">[</span><span class="s1">'gentrification_gap'</span><span class="p">]</span> <span class="o">=</span> <span class="n">master_df</span><span class="p">[</span><span class="s1">'price_rank'</span><span class="p">]</span> <span class="o">-</span> <span class="n">master_df</span><span class="p">[</span><span class="s1">'income_rank'</span><span class="p">]</span>
 
 <span class="c1"># 3. Generate 4-Year Target (Delta Gap)</span>
@@ -7722,28 +7742,28 @@ We compare a neighborhood to its peers in the same city at the same time.</p>
     <span class="n">left_on</span><span class="o">=</span><span class="p">[</span><span class="s1">'neighborhood_id'</span><span class="p">,</span> <span class="s1">'target_year'</span><span class="p">],</span>
     <span class="n">right_on</span><span class="o">=</span><span class="p">[</span><span class="s1">'neighborhood_id'</span><span class="p">,</span> <span class="s1">'year'</span><span class="p">],</span>
     <span class="n">suffixes</span><span class="o">=</span><span class="p">(</span><span class="s1">''</span><span class="p">,</span> <span class="s1">'_future'</span><span class="p">),</span>
-    <span class="n">how</span><span class="o">=</span><span class="s1">'inner'</span> <span class="c1"># Drops rows that don't have a future match (e.g. 2022)</span>
+    <span class="n">how</span><span class="o">=</span><span class="s1">'inner'</span> 
 <span class="p">)</span>
 
 <span class="c1"># Calculate Target: Change in Gap over 4 years</span>
 <span class="n">merged_df</span><span class="p">[</span><span class="s1">'target_delta_gap'</span><span class="p">]</span> <span class="o">=</span> <span class="n">merged_df</span><span class="p">[</span><span class="s1">'gentrification_gap_future'</span><span class="p">]</span> <span class="o">-</span> <span class="n">merged_df</span><span class="p">[</span><span class="s1">'gentrification_gap'</span><span class="p">]</span>
 
 <span class="c1"># 4. Z-Score Normalization (For Features only)</span>
-<span class="c1"># Even though we use Ranks for the target, the RF model still benefits from standardized input features</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">--- Applying Z-Scores to Features ---"</span><span class="p">)</span>
+<span class="c1"># This will now create 'z_median_rent_per_m2' because we added it to FEATURE_COLS</span>
 <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">FEATURE_COLS</span><span class="p">:</span>
-    <span class="n">merged_df</span><span class="p">[</span><span class="sa">f</span><span class="s1">'z_</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s1">'</span><span class="p">]</span> <span class="o">=</span> <span class="n">merged_df</span><span class="o">.</span><span class="n">groupby</span><span class="p">([</span><span class="s1">'city'</span><span class="p">,</span> <span class="s1">'year'</span><span class="p">])[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span>
-        <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span> <span class="o">/</span> <span class="n">x</span><span class="o">.</span><span class="n">std</span><span class="p">()</span>
-    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">merged_df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">merged_df</span><span class="p">[</span><span class="sa">f</span><span class="s1">'z_</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s1">'</span><span class="p">]</span> <span class="o">=</span> <span class="n">merged_df</span><span class="o">.</span><span class="n">groupby</span><span class="p">([</span><span class="s1">'city'</span><span class="p">,</span> <span class="s1">'year'</span><span class="p">])[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span>
+            <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span> <span class="o">/</span> <span class="n">x</span><span class="o">.</span><span class="n">std</span><span class="p">()</span>
+        <span class="p">)</span>
 
 <span class="c1"># 5. Final Selection</span>
-<span class="c1"># We keep metadata, Z-scored features, Ranks, Current Gap, and the Target Delta</span>
 <span class="n">final_cols</span> <span class="o">=</span> <span class="p">[</span>
     <span class="s1">'neighborhood_id'</span><span class="p">,</span> <span class="s1">'city'</span><span class="p">,</span> <span class="s1">'year'</span><span class="p">,</span>          <span class="c1"># Metadata</span>
-    <span class="s1">'price_rank'</span><span class="p">,</span> <span class="s1">'income_rank'</span><span class="p">,</span>                <span class="c1"># The components</span>
+    <span class="s1">'price_rank'</span><span class="p">,</span> <span class="s1">'income_rank'</span><span class="p">,</span>                <span class="c1"># The components (Sales Rank)</span>
     <span class="s1">'gentrification_gap'</span><span class="p">,</span>                       <span class="c1"># The State at T (Gi)</span>
     <span class="s1">'target_delta_gap'</span>                          <span class="c1"># The Target (Change in Gi)</span>
-<span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="sa">f</span><span class="s1">'z_</span><span class="si">{</span><span class="n">c</span><span class="si">}</span><span class="s1">'</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">FEATURE_COLS</span><span class="p">]</span>            <span class="c1"># The Input Features (X)</span>
+<span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="sa">f</span><span class="s1">'z_</span><span class="si">{</span><span class="n">c</span><span class="si">}</span><span class="s1">'</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">FEATURE_COLS</span> <span class="k">if</span> <span class="sa">f</span><span class="s1">'z_</span><span class="si">{</span><span class="n">c</span><span class="si">}</span><span class="s1">'</span> <span class="ow">in</span> <span class="n">merged_df</span><span class="o">.</span><span class="n">columns</span><span class="p">]</span>
 
 <span class="n">model_df</span> <span class="o">=</span> <span class="n">merged_df</span><span class="p">[</span><span class="n">final_cols</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
 <span class="n">model_df</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s1">'year'</span><span class="p">:</span> <span class="s1">'start_year'</span><span class="p">},</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
@@ -7751,8 +7771,8 @@ We compare a neighborhood to its peers in the same city at the same time.</p>
 <span class="c1"># 6. Save</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">--- Final Data Info ---"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">model_df</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">'city'</span><span class="p">)[</span><span class="s1">'start_year'</span><span class="p">]</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">Sample Rows (Milan-style):"</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">model_df</span><span class="p">[[</span><span class="s1">'neighborhood_id'</span><span class="p">,</span> <span class="s1">'start_year'</span><span class="p">,</span> <span class="s1">'price_rank'</span><span class="p">,</span> <span class="s1">'income_rank'</span><span class="p">,</span> <span class="s1">'gentrification_gap'</span><span class="p">,</span> <span class="s1">'target_delta_gap'</span><span class="p">]]</span><span class="o">.</span><span class="n">head</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">Sample Rows:"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">model_df</span><span class="p">[[</span><span class="s1">'neighborhood_id'</span><span class="p">,</span> <span class="s1">'start_year'</span><span class="p">,</span> <span class="s1">'price_rank'</span><span class="p">,</span> <span class="s1">'gentrification_gap'</span><span class="p">,</span> <span class="s1">'target_delta_gap'</span><span class="p">]]</span><span class="o">.</span><span class="n">head</span><span class="p">())</span>
 
 <span class="n">output_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">OUTPUT_PATH</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span>
 <span class="n">output_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
@@ -7785,20 +7805,20 @@ Barcelona    365
 Paris         80
 Name: start_year, dtype: int64
 
-Sample Rows (Milan-style):
-  neighborhood_id  start_year  price_rank  income_rank  gentrification_gap  \
-0         BCN_1.0      2015.0    0.547945     0.136986            0.410959   
-1         BCN_1.0      2016.0    0.589041     0.164384            0.424658   
-2         BCN_1.0      2017.0    0.664384     0.164384            0.500000   
-3         BCN_1.0      2018.0    0.835616     0.164384            0.671233   
-4         BCN_1.0      2019.0    0.719178     0.164384            0.554795   
+Sample Rows:
+  neighborhood_id  start_year  price_rank  gentrification_gap  \
+0         BCN_1.0      2015.0    0.465753            0.328767   
+1         BCN_1.0      2016.0    0.506849            0.342466   
+2         BCN_1.0      2017.0    0.561644            0.397260   
+3         BCN_1.0      2018.0    0.863014            0.698630   
+4         BCN_1.0      2019.0    0.726027            0.561644   
 
    target_delta_gap  
-0          0.143836  
-1          0.130137  
-2         -0.061644  
-3         -0.157534  
-4         -0.212329  
+0          0.232877  
+1          0.136986  
+2          0.027397  
+3         -0.301370  
+4         -0.356164  
 
 ✅ Saved Gentrification Gap dataframe to ../data/processed/modeling_dataframe_gentrification_gap.csv
 </pre>
@@ -7838,6 +7858,8 @@ Sample Rows (Milan-style):
 <th>z_median_household_income</th>
 <th>z_median_price_per_m2</th>
 <th>z_median_rent_per_m2</th>
+<th>z_is_rent_imputed</th>
+<th>z_is_price_imputed</th>
 </tr>
 </thead>
 <tbody>
@@ -7846,83 +7868,95 @@ Sample Rows (Milan-style):
 <td>BCN_1.0</td>
 <td>Barcelona</td>
 <td>2015.0</td>
-<td>0.547945</td>
+<td>0.465753</td>
 <td>0.136986</td>
-<td>0.410959</td>
-<td>0.143836</td>
+<td>0.328767</td>
+<td>0.232877</td>
 <td>1.176464</td>
 <td>-0.340109</td>
 <td>2.354926</td>
 <td>-0.867420</td>
-<td>-0.291390</td>
+<td>-0.298628</td>
 <td>0.389996</td>
+<td>-0.117041</td>
+<td>-0.323431</td>
 </tr>
 <tr>
 <th>1</th>
 <td>BCN_1.0</td>
 <td>Barcelona</td>
 <td>2016.0</td>
-<td>0.589041</td>
+<td>0.506849</td>
 <td>0.164384</td>
-<td>0.424658</td>
-<td>0.130137</td>
+<td>0.342466</td>
+<td>0.136986</td>
 <td>1.170323</td>
 <td>-0.286389</td>
 <td>2.281726</td>
 <td>-0.836085</td>
-<td>-0.045731</td>
+<td>-0.042484</td>
 <td>0.387426</td>
+<td>-0.117041</td>
+<td>-0.297196</td>
 </tr>
 <tr>
 <th>2</th>
 <td>BCN_1.0</td>
 <td>Barcelona</td>
 <td>2017.0</td>
-<td>0.664384</td>
+<td>0.561644</td>
 <td>0.164384</td>
-<td>0.500000</td>
-<td>-0.061644</td>
+<td>0.397260</td>
+<td>0.027397</td>
 <td>1.189332</td>
 <td>-0.252136</td>
 <td>2.393877</td>
 <td>-0.833881</td>
-<td>0.195570</td>
-<td>0.565036</td>
+<td>0.186473</td>
+<td>0.566211</td>
+<td>-0.166683</td>
+<td>-0.323431</td>
 </tr>
 <tr>
 <th>3</th>
 <td>BCN_1.0</td>
 <td>Barcelona</td>
 <td>2018.0</td>
-<td>0.835616</td>
+<td>0.863014</td>
 <td>0.164384</td>
-<td>0.671233</td>
-<td>-0.157534</td>
+<td>0.698630</td>
+<td>-0.301370</td>
 <td>1.159650</td>
 <td>-0.202133</td>
 <td>2.431218</td>
 <td>-0.806649</td>
-<td>1.031443</td>
-<td>0.703934</td>
+<td>1.033328</td>
+<td>0.711538</td>
+<td>-0.166683</td>
+<td>-0.297196</td>
 </tr>
 <tr>
 <th>4</th>
 <td>BCN_1.0</td>
 <td>Barcelona</td>
 <td>2019.0</td>
-<td>0.719178</td>
+<td>0.726027</td>
 <td>0.164384</td>
-<td>0.554795</td>
-<td>-0.212329</td>
+<td>0.561644</td>
+<td>-0.356164</td>
 <td>1.166302</td>
 <td>-0.214365</td>
 <td>2.399830</td>
 <td>-0.812456</td>
-<td>0.426338</td>
+<td>0.411643</td>
 <td>0.563830</td>
+<td>-0.117041</td>
+<td>-0.297196</td>
 </tr>
 <tr>
 <th>...</th>
+<td>...</td>
+<td>...</td>
 <td>...</td>
 <td>...</td>
 <td>...</td>
@@ -7952,6 +7986,8 @@ Sample Rows (Milan-style):
 <td>-1.033793</td>
 <td>-1.105671</td>
 <td>NaN</td>
+<td>NaN</td>
+<td>NaN</td>
 </tr>
 <tr>
 <th>441</th>
@@ -7967,6 +8003,8 @@ Sample Rows (Milan-style):
 <td>-0.502413</td>
 <td>-1.632193</td>
 <td>-1.266079</td>
+<td>NaN</td>
+<td>NaN</td>
 <td>NaN</td>
 </tr>
 <tr>
@@ -7984,6 +8022,8 @@ Sample Rows (Milan-style):
 <td>-1.350825</td>
 <td>-1.456940</td>
 <td>NaN</td>
+<td>NaN</td>
+<td>NaN</td>
 </tr>
 <tr>
 <th>443</th>
@@ -7999,6 +8039,8 @@ Sample Rows (Milan-style):
 <td>-0.099646</td>
 <td>-1.003767</td>
 <td>-1.078589</td>
+<td>NaN</td>
+<td>NaN</td>
 <td>NaN</td>
 </tr>
 <tr>
@@ -8016,10 +8058,12 @@ Sample Rows (Milan-style):
 <td>-1.446227</td>
 <td>-1.330193</td>
 <td>NaN</td>
+<td>NaN</td>
+<td>NaN</td>
 </tr>
 </tbody>
 </table>
-<p>445 rows × 13 columns</p>
+<p>445 rows × 15 columns</p>
 </div>
 </div>
 </div>
@@ -8140,7 +8184,13 @@ Sample Rows (Milan-style):
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
 <pre>Merging BCN/PAR ((445, 10)) with Milan ((425, 12))...
 --- Generating Unified Z-Scores ---
-Final Universal Shape: (870, 12)
+</pre>
+</div>
+</div>
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>Final Universal Shape: (870, 12)
 city
 Barcelona    365
 Milan        425
