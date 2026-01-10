@@ -1,124 +1,112 @@
-# Gentrification Analysis Project
+# DALAS: Urban Gentrification Early Warning System
 
-This repository contains the code and data for a data science project analyzing the factors of gentrification in Paris, Barcelona, and Milan.
+**A Machine Learning framework to predict socio-economic displacement in European metropolises (Milan, Barcelona, Paris).**
 
-## Current Project Status
+![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
+![ML](https://img.shields.io/badge/Model-Random%20Forest-green)
+![Status](https://img.shields.io/badge/Status-Completed-success)
 
-We have successfully built a robust web scraper for collecting real estate data from **Idealista** (our source for Barcelona and Milan). The immediate next steps involve dividing tasks to acquire the remaining datasets as outlined by our mentor.
+## 📌 Project Overview
 
-The project is now at a crucial "divide and conquer" stage.
+Gentrification is often detected too late—only after residents have already been displaced. This project proposes a **Predictive Early Warning System** that uses historical socio-economic data and real-time real estate scraping to forecast the **"Gentrification Gap"**: the specific metric where housing prices decouple from local wages.
 
----
-
-## Data Acquisition Plan & To-Do List
-
-This plan is based on our mentor's guidance. Let's use this as our checklist.
-
-### **A. Core Socio-Economic & Demographic Data**
-*   **Status:** <span style="color:red;">**To Do**</span>
-*   **Owner:** **Person 2 (Data Integrator)**
-*   **Objective:** Download official statistics (population, income, education) for all three cities.
-*   **Action Items:**
-    *   [ ] **Paris:** Explore `data.paris.fr` (INSEE data) for CSV/GeoJSON files on "revenus," "population," etc.
-    *   [ ] **Barcelona:** Explore `opendata-ajuntament.barcelona.cat` for CSV files on "Població" and "Renda."
-    *   [ ] **Milan:** Explore `dati.comune.milano.it` for demographic ("demografici") datasets.
-
-### **B. Real Estate Market Data**
-*   **Status:** <span style="color:orange;">**In Progress**</span>
-*   **Owner:** **Person 1 (Scraper)**
-*   **Objective:** Scrape property listings (price, size, rooms, etc.).
-*   **Action Items:**
-    *   [x] **Barcelona & Milan (Idealista):** The scraper `scrapers/idealista_scraper.py` is complete and functional.
-    *   [ ] **Paris (SeLoger/Bien'ici):** Adapt the existing scraper logic to build a new scraper for a French real estate site. This is the next major scraping task.
-
-### **C. Tourism Pressure Data**
-*   **Status:** <span style="color:red;">**To Do**</span>
-*   **Owner:** **Person 2 (Data Integrator)**
-*   **Objective:** Get data on short-term rentals.
-*   **Action Items:**
-    *   [ ] Go to `insideairbnb.com` and download the `listings.csv` files for Paris, Barcelona, and Milan.
-
-### **D. Public Policy & Infrastructure Data**
-*   **Status:** <span style="color:red;">**To Do**</span>
-*   **Owner:** **Person 2 (Data Integrator)**
-*   **Objective:** Find data on major urban development projects.
-*   **Action Items:**
-    *   [ ] **(Critical Task):** Find and download the official **GeoJSON or Shapefiles for the neighborhood boundaries** of all three cities from their respective open data portals. This is essential for merging all other datasets.
-    *   [ ] Search the city portals for datasets related to new metro lines ("Grand Paris Express," Milan's M4/M5) and urban renewal projects.
-
-### **E. Commercial & Cultural Activity Data**
-*   **Status:** <span style="color:red;">**To Do**</span>
-*   **Owner:** **Person 2 (Data Integrator)**
-*   **Objective:** Quantify the commercial character of neighborhoods.
-*   **Action Items:**
-    *   [ ] Research the **Overpass API** for OpenStreetMap.
-    *   [ ] Write a small script using the `requests` library to query the API for the number of amenities like `cafe`, `restaurant`, `art_gallery`, etc., within the neighborhood boundaries found in task D.
+We analyzed the structural drivers of displacement across **Milan, Barcelona, and Paris**, combining official census data with granular scraped listings from **Idealista** and **InsideAirbnb**.
 
 ---
 
-## Immediate Next Steps
+## 📊 Key Results & Visualizations
 
-### For Person 1 (Scraper):
-1.  Review the `idealista_scraper.py` to understand its logic (batching, anti-detection, etc.).
-2.  Begin researching **SeLoger.com** or **Bien'ici.com** for Paris. Analyze their page structure to plan the new scraper.
+### 1. The "Rent Gap" Mechanics
+Our analysis confirmed the *Rent Gap Theory*: displacement pressure is highest where the mismatch between potential value (Price) and current population status (Income) is greatest.
 
-### For Person 2 (Data Integrator):
-1.  Your **highest priority** is to find and download the **GeoJSON/Shapefiles of the neighborhoods** for all three cities.
-2.  Once you have the boundaries, download the easy datasets: start with the **Inside Airbnb** CSV files.
-3.  Begin exploring the government open data portals listed in Part A.
+![Rent Gap Scatter](images/scatter_price_income.png)
+*> **Figure 1:** The Gentrification Gap. Neighborhoods above the red dashed line are "overheated," where prices have decoupled from local purchasing power.*
+
+### 2. Spatial Heterogeneity
+Gentrification is not random; it clusters spatially. We used **Spatial KNN Imputation** to map these dynamics even where official census data was missing.
+
+![Spatial Maps](images/4_maps_bcn.png)
+*> **Figure 2:** Spatial decoupling in Barcelona. High prices (Top Right) have invaded low-income historical districts (Top Left), creating high-pressure displacement zones.*
+
+### 3. Drivers of Displacement (SHAP)
+Using **SHAP (SHapley Additive exPlanations)**, we identified that **Low Initial Price** is the strongest predictor of future price spikes. Investors do not target expensive areas; they target "undervalued" catch-up zones.
+
+![SHAP Summary](images/shap_summary_dot.png)
+*> **Figure 3:** SHAP Summary Plot. Blue dots (Low Price) on the top row push the prediction to the right (High Gentrification), confirming the "Catch-Up" mechanic.*
 
 ---
 
-## Technical Documentation
+## 🧠 Modeling Strategy
 
-### Scraping Strategy
-The `idealista_scraper.py` is designed to be robust, resilient, and difficult to detect.
-- **Dynamic Scraping:** It uses `selenium` with `undetected-chromedriver` to control a real browser, allowing it to handle modern, JavaScript-heavy websites.
-- **Anti-Detection:** It mimics human behavior by rotating `USER_AGENTS`, using randomized delays, and simulating page scrolling.
-- **Batch Processing:** It scrapes in small, random batches, restarting the browser for each batch to avoid long sessions that can be flagged.
-- **Configuration Management:** All file paths are managed in `scrapers/config.py` for easy configuration.
-- **Resilience:** It saves progress incrementally and can be restarted without losing data, automatically skipping URLs that have already been processed.
+We framed the problem as a regression task predicting the **Delta Gentrification Gap ($\Delta G$)**.
 
-### Project Structure
-```
+*   **Algorithm:** Random Forest Regressor (Optimized via GridSearch).
+*   **Validation Protocol A (Temporal):** Trained on 2015-2022, Tested on **Real-Time 2025 Data** (via Scraping).
+    *   **Result:** $R^2 \approx 0.32$. The model successfully predicts 2025 market heat using lagged 2023 administrative data.
+*   **Validation Protocol B (Spatial):** Trained on Milan/Barcelona, Tested on Paris.
+    *   **Result:** Highlighted the need for local calibration due to "Domain Shift" in income distributions.
+
+---
+
+## 🛠 Technical Architecture
+
+### 1. Data Pipeline & Spatial Imputation
+*   Harmonized heterogeneous data sources (INSEE, ISTAT, Open Data).
+*   Implemented **Spatial K-Nearest Neighbors (KNN)** to impute missing demographic years based on the "urban texture" of neighboring districts.
+
+### 2. Advanced Scraping (The "Miner")
+We built a robust, anti-detection scraper to harvest real-time ground truth data from **Idealista** and **SeLoger**.
+*   **Tech Stack:** `Selenium`, `undetected-chromedriver`, `Pandas`.
+*   **Features:**
+    *   **Anti-Bot:** Rotates User-Agents, randomizes geometric scrolling patterns.
+    *   **Session Persistence:** Batch processing with incremental CSV saving.
+    *   **Granularity:** Extracts specific features like "Needs Renovation" vs "New Development".
+
+### 3. Project Structure
+```bash
 /gentrification_project
 |-- /data
-|   |-- /raw/barcelona/
-|-- /scrapers
-|   |-- _error_screenshots/
-|   |-- config.py
-|   |-- idealista_scraper.py
+|   |-- /processed/           # Final datasets used for modeling
+|   |-- /raw/                 # Raw scraped logs and shapefiles
+|
 |-- /notebooks
+|   |-- data_exploration.ipynb  # EDA, Spatial Maps, Outlier Analysis
+|   |-- RFandSHAP.ipynb         # Model Training, Validation (2025), SHAP Analysis
+|
+|-- /scrapers
+|   |-- idealista_scraper.py  # Production scraper for IT/ES markets
+|   |-- config.py             # Path management
+|
+|-- /imgs                     # Figures generated for the report
 |-- README.md
-|-- requirements.txt```
+|-- requirements.txt
+```
 
-### Setup & Installation
+---
 
-1.  **Clone the repository and create a virtual environment:**
-    ```bash
-    git clone <your-repo-url>
-    cd gentrification_project
-    python -m venv .venv
-    source .venv/bin/activate
-    ```
+## 🚀 How to Run
 
-2.  **Install the required packages:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-    *Note: `requirements.txt` includes both `selenium` (used in the current scraper) and `playwright` (recommended by our mentor for future scrapers).*
+### 1. Setup
+```bash
+git clone <repo-url>
+cd gentrification_project
+python -m venv .venv
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+pip install -r requirements.txt
+```
 
-3.  **Install a browser for automation:** The current script uses **Chromium**.
-    *   **On Arch/EndeavourOS:** `sudo pacman -S chromium`
-    *   **On Debian/Ubuntu:** `sudo apt update && sudo apt install chromium-browser`
-
-### How to Run the Idealista Scraper
-
-Navigate to the `scrapers` directory and run the script from there.
-
+### 2. Run the Scraper (Optional)
+To generate fresh 2025/2026 data for validation:
 ```bash
 cd scrapers
 python idealista_scraper.py
 ```
 
-The script will handle the rest, saving its output to the `/data/raw/barcelona` directory as defined in `config.py`.
+### 3. Run the Analysis
+Launch Jupyter Lab to replicate the figures and models:
+```bash
+jupyter lab notebooks/RFandSHAP.ipynb
+```
+
+
+*Academic Project - Jan 2026*
